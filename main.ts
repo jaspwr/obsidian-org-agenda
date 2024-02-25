@@ -1,7 +1,7 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 
-import { TodoItem } from './types';
+import { Time, TodoItem } from './types';
 
 interface OrgAgendaSettings {
 	mySetting: string;
@@ -130,7 +130,8 @@ function parse_date(date: string): { date: Date; has_time_of_day: boolean } | nu
 /**
 * Formats date in org-agenda format (e.g. <1970-01-01 Sun>).
 */
-function format_date(date: Date, has_time_of_day: boolean): string {
+function format_date(time: Time): string {
+	let date = time.date; 
 	const year = date.getFullYear().toString();
 	const month = (date.getMonth() + 1).toString().padStart(2, "0");
 	const day = date.getDate().toString().padStart(2, "0");
@@ -144,7 +145,8 @@ function format_date(date: Date, has_time_of_day: boolean): string {
 	const hour = date.getHours().toString().padStart(2, "0");
 	const minute = date.getMinutes().toString().padStart(2, "0");
 
-	if (has_time_of_day) {
+	// TODO: time ranges
+	if (time.has_time_of_day) {
 		return `<${date_str} ${day_of_week} ${hour}:${minute}>`;
 	} else {
 		return `<${date_str} ${day_of_week}>`;
@@ -185,6 +187,58 @@ export default class OrgAgenda extends Plugin {
 		});
 
 		ribbonIconEl.addClass('my-plugin-ribbon-class');
+
+		const set_date = (editor: Editor) => (date: Time) => {
+			let cursor = editor.getCursor();
+			let line = editor.getLine(cursor.line);
+
+			let tokens = tokenize_todo_item(line);
+			if (tokens.length < 2 || tokens[0] != "*") return;
+
+			const formatted_date = format_date(date);
+
+			let date_token = tokens.find((t) => t.startsWith("<") && t.endsWith(">"));
+
+			if (date_token !== undefined) {
+				cursor.ch = line.indexOf(date_token);
+				editor.replaceRange(
+					formatted_date,
+					cursor,
+					{ line: cursor.line, ch: cursor.ch + date_token.length }
+				);
+			} else {
+				cursor.ch = line.length;
+
+				if (line[cursor.ch] !== " ") {
+					editor.replaceRange(" ", cursor, cursor);
+					cursor.ch++;
+				}
+
+				editor.replaceRange(
+					formatted_date,
+					cursor
+				);
+			}
+
+			editor.setSelection({
+				line: cursor.line,
+				ch: cursor.ch + formatted_date.length,
+			});
+		};
+
+		const get_date_from_cursor = (editor: Editor) => {
+			let cursor = editor.getCursor();
+			let line = editor.getLine(cursor.line);
+
+			let tokens = tokenize_todo_item(line);
+			if (tokens.length < 2 || tokens[0] != "*") return null;
+
+			let date_token = tokens.find((t) => t.startsWith("<") && t.endsWith(">"));
+
+			if (date_token === undefined) return null;
+
+			return parse_date(date_token);
+		}
 
 		const cycle_todo_state = (editor: Editor, backwards: boolean, line_number: number) => {
 
@@ -258,43 +312,7 @@ export default class OrgAgenda extends Plugin {
 			id: "insert-date",
 			name: "Insert date",
 			editorCallback: (editor: Editor) => {
-				new DateSelectModal(this.app, (date: Date) => {
-					let cursor = editor.getCursor();
-					let line = editor.getLine(cursor.line);
-
-					let tokens = tokenize_todo_item(line);
-					if (tokens.length < 2 || tokens[0] != "*") return;
-
-					const formatted_date = format_date(date, false);
-
-					let date_token = tokens.find((t) => t.startsWith("<") && t.endsWith(">"));
-
-					if (date_token !== undefined) {
-						cursor.ch = line.indexOf(date_token);
-						editor.replaceRange(
-							formatted_date,
-							cursor,
-							{ line: cursor.line, ch: cursor.ch + date_token.length }
-						);
-					} else {
-						cursor.ch = line.length;
-
-						if (line[cursor.ch] !== " ") {
-							editor.replaceRange(" ", cursor, cursor);
-							cursor.ch++;
-						}
-
-						editor.replaceRange(
-							formatted_date,
-							cursor
-						);
-					}
-
-					editor.setSelection({
-						line: cursor.line,
-						ch: cursor.ch + formatted_date.length,
-					});
-				}).open();
+				new DateSelectModal(this.app, set_date(editor), get_date_from_cursor(editor) || undefined).open();
 			}
 		});
 
@@ -430,16 +448,18 @@ export class AgendaView extends ItemView {
 import Calendar from './Calendar.svelte';
 
 class DateSelectModal extends Modal {
-	on_select: (date: Date) => void;
+	on_select: (date: Time) => void;
 	component?: Calendar;
+	inital_date?: Time;
 
-	constructor(app: App, on_select: (date: Date) => void) {
+	constructor(app: App, on_select: (date: Time) => void, inital_date?: Time) {
 		super(app);
 		this.on_select = on_select;
+		this.inital_date = inital_date;
 	}
 
 	onOpen() {
-		let on_select = (date: Date) => {
+		let on_select = (date: Time) => {
 			this.on_select(date);
 			this.close();
 		};
@@ -449,6 +469,7 @@ class DateSelectModal extends Modal {
 			target: contentEl,
 			props: {
 				on_select,
+				inital_date: this.inital_date,
 			}
 		});
 	}
@@ -515,7 +536,7 @@ export class FlagWidget extends WidgetType {
 
 		div.innerText = this.flag;
 
-		div.style.color = flag_colour(this.flag);	
+		div.style.color = flag_colour(this.flag);
 
 		div.style.backgroundColor = "var(--pre-code)";
 		div.style.padding = "3px";

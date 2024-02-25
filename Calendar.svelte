@@ -1,5 +1,21 @@
 <script>
+	import { time_now } from "./types";
+
 	export let on_select;
+	export let inital_date = time_now(false);
+
+	if (inital_date.has_time_of_day === true) {
+		let hours = inital_date.date.getHours();
+		let minutes = inital_date.date.getMinutes();
+
+		let old_on_select = on_select.bind({});
+
+		on_select = (time) => {
+			time.date.setHours(hours, minutes, 0, 0);
+			time.has_time_of_day = true;
+			old_on_select(time);
+		};
+	}
 
 	const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -45,10 +61,9 @@
 		};
 	};
 
-
-	let selected = new Date(Date.now());
+	let selected = inital_date.date;
 	selected.setHours(0, 0, 0, 0);
-	
+
 	const shift_by_days = (date, days) => {
 		const new_date = new Date(date);
 		new_date.setDate(new_date.getDate() + days);
@@ -61,13 +76,20 @@
 		return new_date;
 	};
 
+	const to_time = (date) => {
+		return {
+			date: date,
+			has_time_of_day: false,
+		};
+	};
+
 	const keypress = (e) => {
 		// https://orgmode.org/manual/The-date_002ftime-prompt.html#FOOT61
 		if (e.key === "Enter") {
-			on_select(selected);
-			return;	
+			on_select(to_time(selected));
+			return;
 		}
-		
+
 		if (e.key === "ArrowRight") {
 			selected = shift_by_days(selected, 1);
 		} else if (e.key === "ArrowLeft") {
@@ -86,7 +108,7 @@
 		if (e.key === ">") {
 			selected = shift_by_months(selected, 1);
 		}
-		
+
 		if (e.key === "<") {
 			selected = shift_by_months(selected, -1);
 		}
@@ -150,7 +172,7 @@
 							}`}
 							on:click={() =>
 								on_select(
-									day_in_month(i * 7 + j + 1, month).date,
+									to_time(day_in_month(i * 7 + j + 1, month).date),
 								)}
 						>
 							{day_in_month(i * 7 + j + 1, month).day}
@@ -161,6 +183,8 @@
 		{/each}
 	</table>
 </div>
+
+<svelte:window on:keydown|preventDefault={keypress} />
 
 <style>
 	.day-button {
@@ -213,5 +237,3 @@
 		background-color: var(--interactive-accent);
 	}
 </style>
-
-<svelte:window on:keydown|preventDefault={keypress} />

@@ -21,14 +21,13 @@
 		const todos_on_day = todos
 			.filter((todo) => occurs_on_day(todo, day))
 			.sort(
-				(a, b) => (a.date?.date.valueOf() || 0) - (b.date?.date.valueOf() || 0),
+				(a, b) =>
+					(a.date?.date.valueOf() || 0) -
+					(b.date?.date.valueOf() || 0),
 			);
 
-		console.log("sorted");
 		return { day, todos_on_day };
 	});
-
-
 </script>
 
 {#each day_range as { day, todos_on_day }}
@@ -38,14 +37,16 @@
 		</div>
 		<ul>
 			{#each todos_on_day as todo}
-				<li class={`todo-item ${todo.flag === "DONE" ? "task-done" : ""}`}>
-					<span style={`color: ${flag_colour(todo.flag)};`} class="flag">{todo.flag}</span>
+				<li
+					class={`todo-item ${
+						todo.flag === "DONE" ? "task-done" : ""
+					}`}
+				>
+					<span
+						style={`color: ${flag_colour(todo.flag)};`}
+						class="flag">{todo.flag}</span
+					>
 					{todo.name}
-					{#if todo.date?.has_time_of_day}
-						<span class="todo-date">
-							&lt;{new Date(todo.date.date).toLocaleTimeString()}&gt;
-						</span>
-					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -68,7 +69,7 @@
 		text-decoration: line-through;
 		opacity: 0.5;
 	}
-	
+
 	.flag {
 		background-color: var(--pre-code);
 		padding: 3px;
