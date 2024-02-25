@@ -1,0 +1,11 @@
+{
+	"id": "org-agenda",
+	"name": "Org Agenda",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Emacs Org-mode style agenda view for Obsidian.",
+	"author": "Obsidian",
+	"authorUrl": "https://github.com/jaspwr",
+	"fundingUrl": "https://github.com/jaspwr",
+	"isDesktopOnly": false
+}
