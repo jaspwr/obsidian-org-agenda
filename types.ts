@@ -6,7 +6,7 @@ export type TodoItem = {
 		line: number;
 	};
 	date?: Time;
-	priority?: number;
+	priority?: string;
 };
 
 export type Time = {
@@ -15,10 +15,29 @@ export type Time = {
 	until?: Date;
 };
 
-export function time_now(has_time_of_day: boolean): Time {
-	const now = new Date();
-	return {
-		date: now,
-		has_time_of_day,
-	};
-}
+export enum AgendaViewType {
+	DailyWeekly,
+	GlobalTODO,
+	Calendar,
+	ByTags,
+	Search,
+	Stuck,
+};
+
+export type DailyWeeklyView = {
+	type: AgendaViewType.DailyWeekly;
+	date: Date;
+	days_after_showing: number;
+	days_before_showing: number;
+};
+
+export type GlobalTODOView = {
+	type: AgendaViewType.GlobalTODO;
+};
+
+export type CalendarView = {
+	type: AgendaViewType.Calendar;
+	month: Date;
+};
+
+export type AgendaView = DailyWeeklyView | GlobalTODOView | CalendarView;

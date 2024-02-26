@@ -6,3 +6,21 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.agenda-row-file {
+	min-width: 7rem;
+	padding-right: 0.6rem !important;
+}
+
+.agenda-row-time {
+	min-width: 6rem;
+}
+
+.agenda-row-content {
+	width: 100%;
+	padding-left: 0.6rem !important;
+}
+
+.agenda-clickable {
+	cursor: pointer;
+}

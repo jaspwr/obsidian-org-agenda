@@ -1,7 +1,7 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 
-import { Time, TodoItem } from './types';
+import { AgendaViewType, Time, TodoItem } from './types';
 
 interface OrgAgendaSettings {
 	mySetting: string;
@@ -11,19 +11,44 @@ const DEFAULT_SETTINGS: OrgAgendaSettings = {
 	mySetting: 'default'
 }
 
+enum TokenType {
+	Word,
+	Date,
+	Priority,
+	Flag,
+}
+
+type Token = {
+	value: string;
+	type: TokenType;
+	range: {
+		start: number;
+		end: number;
+	};
+}
 
 /** 
 * Splits by whitespace but groups anything in square or angel brackets.
 * Useful for parsing TODO items.
 */
-function tokenize_todo_item(line: string): string[] {
-	const tokens: string[] = [];
+function tokenize_todo_item(line: string): Token[] {
+	const tokens: Token[] = [];
 
 	let current_token: string = "";
 
-	const push_token = () => {
+	let i = 0;
+	const push_token = (type: TokenType) => {
 		if (current_token.length === 0) return;
-		tokens.push(current_token);
+
+		tokens.push({
+			value: current_token,
+			type,
+			range: {
+				start: i - current_token.length + 1,
+				end: i + 1,
+			}
+		});
+
 		current_token = "";
 	};
 
@@ -35,39 +60,44 @@ function tokenize_todo_item(line: string): string[] {
 
 	let state = State.Normal;
 
-	for (let i = 0; i < line.length; i++) {
+	for (i = 0; i < line.length; i++) {
 		const c = line[i];
 
 		if (state === State.Normal) {
 			if (c === " " || c === "\t" || c === "\r" || c === "\n") {
-				push_token();
+				push_token(TokenType.Word);
 				continue;
 			}
 
 			if (c === "[") {
 				state = State.SquareBrackets;
-				push_token();
+				push_token(TokenType.Word);
 			}
 
 			if (c === "<") {
 				state = State.AngelBrackets;
-				push_token();
+				push_token(TokenType.Word);
 			}
 
 			current_token += c;
 		} else if (state === State.SquareBrackets) {
 			current_token += c;
 
+			let type = TokenType.Priority;
+			if (parse_date(current_token) !== null) {
+				type = TokenType.Date;
+			}
+
 			if (c === "]") {
 				state = State.Normal;
-				push_token();
+				push_token(type);
 			}
 		} else if (state === State.AngelBrackets) {
 			current_token += c;
 
 			if (c === ">") {
 				state = State.Normal;
-				push_token();
+				push_token(TokenType.Date);
 			}
 		}
 	}
@@ -131,7 +161,7 @@ function parse_date(date: string): { date: Date; has_time_of_day: boolean } | nu
 * Formats date in org-agenda format (e.g. <1970-01-01 Sun>).
 */
 function format_date(time: Time): string {
-	let date = time.date; 
+	let date = time.date;
 	const year = date.getFullYear().toString();
 	const month = (date.getMonth() + 1).toString().padStart(2, "0");
 	const day = date.getDate().toString().padStart(2, "0");
@@ -151,6 +181,21 @@ function format_date(time: Time): string {
 	} else {
 		return `<${date_str} ${day_of_week}>`;
 	}
+}
+
+function token_under_cursor(editor: Editor): Token | null {
+	let cursor = editor.getCursor();
+	let line = editor.getLine(cursor.line);
+
+	let tokens = tokenize_todo_item(line);
+
+	for (let token of tokens) {
+		if (cursor.ch >= token.range.start && cursor.ch < token.range.end - 1) {
+			return token;
+		}
+	}
+
+	return null;
 }
 
 export default class OrgAgenda extends Plugin {
@@ -193,20 +238,25 @@ export default class OrgAgenda extends Plugin {
 			let line = editor.getLine(cursor.line);
 
 			let tokens = tokenize_todo_item(line);
-			if (tokens.length < 2 || tokens[0] != "*") return;
+			if (tokens.length < 2 || tokens[0].value != "*") return;
 
 			const formatted_date = format_date(date);
 
-			let date_token = tokens.find((t) => t.startsWith("<") && t.endsWith(">"));
+			let date_token = tokens.find((t) => t.type === TokenType.Date);
 
 			if (date_token !== undefined) {
-				cursor.ch = line.indexOf(date_token);
+				// There is already a date, we need to replace it.
+
+				cursor.ch = date_token.range.start;
 				editor.replaceRange(
 					formatted_date,
 					cursor,
-					{ line: cursor.line, ch: cursor.ch + date_token.length }
+					{ line: cursor.line, ch: cursor.ch + date_token.value.length }
 				);
 			} else {
+				// There is no date, we need to add one and a space if the line doesn't 
+				// already end with one.
+
 				cursor.ch = line.length;
 
 				if (line[cursor.ch] !== " ") {
@@ -227,27 +277,101 @@ export default class OrgAgenda extends Plugin {
 		};
 
 		const get_date_from_cursor = (editor: Editor) => {
-			let cursor = editor.getCursor();
-			let line = editor.getLine(cursor.line);
+			const cursor = editor.getCursor();
+			const line = editor.getLine(cursor.line);
 
 			let tokens = tokenize_todo_item(line);
-			if (tokens.length < 2 || tokens[0] != "*") return null;
+			if (tokens.length < 2 || tokens[0].value != "*") return null;
 
-			let date_token = tokens.find((t) => t.startsWith("<") && t.endsWith(">"));
+			let date_token = tokens.find((t) => t.type === TokenType.Date);
 
 			if (date_token === undefined) return null;
 
-			return parse_date(date_token);
+			return parse_date(date_token.value);
 		}
+
+		const offset_date = (token: Token, line: number, editor: Editor, offset_ms: number) => {
+			if (token.type !== TokenType.Date) throw new Error("Token is not a date");
+
+			let date = parse_date(token.value);
+			if (date === null) return;
+
+			date.date = new Date(date.date.valueOf() + offset_ms);
+			let formatted_date = format_date(date);
+
+			editor.replaceRange(
+				formatted_date,
+				{ line, ch: token.range.start },
+				{ line, ch: token.range.end }
+			);
+		};
+
+		const is_digit = (char: string): boolean => {
+			return "0123456789".includes(char);
+		};
+
+		const offset_date_item_under_cursor = (editor: Editor, offset: number) => {
+			// Just increments whatever number is under the cursor.
+
+			const cursor = editor.getCursor();
+			const line = editor.getLine(cursor.line);
+
+			let start = cursor.ch;
+			let end = cursor.ch;
+
+			// TODO: Day of week.
+
+			while (start > 0 && is_digit(line[start - 1])) start--;
+			while (end < line.length && is_digit(line[end])) end++;
+
+			let number = parseInt(line.slice(start, end));
+
+			if (isNaN(number)) return;
+
+			number += offset;
+
+			editor.replaceRange(
+				number.toString(),
+				{ line: cursor.line, ch: start },
+				{ line: cursor.line, ch: end }
+			);
+
+			// Uses the builtin date do handle rolling over months and years ect.
+			// Simplest way to cover all edge cases.
+
+			let token = token_under_cursor(editor);
+
+			if (token === null || token.type !== TokenType.Date) return;
+
+			let date = parse_date(token.value);
+
+			if (date === null) return;
+
+			let formatted_date = format_date(date);
+
+			if (formatted_date !== token.value) {
+				editor.replaceRange(
+					formatted_date,
+					{ line: cursor.line, ch: token.range.start },
+					{ line: cursor.line, ch: token.range.end }
+				);
+			}
+
+			const new_line = editor.getLine(cursor.line);
+
+			if (cursor.ch < new_line.length) {
+				editor.setCursor(cursor);
+			}
+		};
 
 		const cycle_todo_state = (editor: Editor, backwards: boolean, line_number: number) => {
 
 			let line = editor.getLine(line_number);
 
 			let tokens = tokenize_todo_item(line);
-			if (tokens.length < 2 || tokens[0] != "*") return;
+			if (tokens.length < 2 || tokens[0].value != "*") return;
 
-			const flag = tokens[1];
+			const flag = tokens[1].value;
 
 			if (backwards) {
 				if (flag === "TODO") {
@@ -308,6 +432,150 @@ export default class OrgAgenda extends Plugin {
 			editorCallback: cycle_selected_todo_state(true),
 		});
 
+		const DAY_MS = 1000 * 60 * 60 * 24;
+
+		const shift_left_right = (editor: Editor, backwards: boolean) => {
+			const token = token_under_cursor(editor);
+			if (token !== null && token.type === TokenType.Date) {
+				let cursor = editor.getCursor();
+				offset_date(token, cursor.line, editor, backwards ? -DAY_MS : DAY_MS);
+
+				const line = editor.getLine(cursor.line);
+				if (cursor.ch < line.length) {
+					editor.setCursor(cursor);
+				}
+			} else {
+				cycle_selected_todo_state(backwards)(editor);
+			}
+		};
+
+		this.addCommand({
+			id: "shift-left",
+			name: "Shift left",
+			editorCallback: (editor: Editor) => {
+				shift_left_right(editor, true);
+			},
+			hotkeys: [
+				{
+					modifiers: ["Shift"],
+					key: "ArrowLeft",
+				}
+			]
+		});
+
+		this.addCommand({
+			id: "shift-right",
+			name: "Shift Right",
+			editorCallback: (editor: Editor) => {
+				shift_left_right(editor, false);
+			},
+			hotkeys: [
+				{
+					modifiers: ["Shift"],
+					key: "ArrowRight",
+				}
+			]
+		});
+
+		const cycle_priority = (editor: Editor, backwards: boolean) => {
+			let cursor = editor.getCursor();
+			let line = editor.getLine(cursor.line);
+			const tokens = tokenize_todo_item(line);
+
+			for (let token of tokens) {
+				if (token.type !== TokenType.Priority) continue;
+
+				let priority = strip_brackets(token.value);
+
+				let new_priority = undefined;
+
+				switch (priority) {
+					case "#A":
+						new_priority = backwards ? "" : "#B";
+						break;
+					case "#B":
+						new_priority = backwards ? "#A" : "#C";
+						break;
+					case "#C":
+						new_priority = backwards ? "#B" : "";
+						break;
+					default:
+						new_priority = backwards ? "#C" : "#A";
+						break;
+				}
+
+				if (new_priority === "") {
+					let start = token.range.start;
+					let end = token.range.end;
+
+					while (start > 1 && line[start - 1] === " ") start--;
+					while (end < line.length - 1 && line[end] === " ") end++;
+
+					editor.replaceRange(
+						" ",
+						{ line: cursor.line, ch: start },
+						{ line: cursor.line, ch: end }
+					);
+				} else {
+					editor.replaceRange(
+						`[${new_priority}]`,
+						{ line: cursor.line, ch: token.range.start },
+						{ line: cursor.line, ch: token.range.end }
+					);
+				}
+
+
+				return;
+			}
+
+			// No priority found, add one.
+
+			const new_priority = backwards ? " [#C]" : " [#A]";
+			if (tokens.length < 2 || tokens[0].value != "*") return;
+			if (!org_flags.includes(tokens[1].value)) return;
+			editor.replaceRange(
+				new_priority,
+				{ line: cursor.line, ch: tokens[1].range.end - 1 },
+				{ line: cursor.line, ch: tokens[1].range.end - 1 }
+			);
+		};
+
+		this.addCommand({
+			id: "shift-up",
+			name: "Shift Up",
+			editorCallback: (editor: Editor) => {
+				if (token_under_cursor(editor)?.type === TokenType.Date) {
+					offset_date_item_under_cursor(editor, 1);
+				} else {
+					cycle_priority(editor, false);
+				}
+			},
+			hotkeys: [
+				{
+					modifiers: ["Shift"],
+					key: "ArrowUp",
+				}
+			]
+		});
+
+		this.addCommand({
+			id: "shift-down",
+			name: "Shift Down",
+			editorCallback: (editor: Editor) => {
+				if (token_under_cursor(editor)?.type === TokenType.Date) {
+					offset_date_item_under_cursor(editor, -1);
+				} else {
+					cycle_priority(editor, true);
+				}
+			},
+			hotkeys: [
+				{
+					modifiers: ["Shift"],
+					key: "ArrowDown",
+				}
+			]
+		});
+
 		this.addCommand({
 			id: "insert-date",
 			name: "Insert date",
@@ -322,7 +590,7 @@ export default class OrgAgenda extends Plugin {
 			callback: open_agenda,
 		});
 
-		this.registerEditorExtension(emojiListPlugin)
+		this.registerEditorExtension(editorPlugin)
 
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
@@ -343,7 +611,7 @@ export default class OrgAgenda extends Plugin {
 
 }
 
-const ORG_DEAFULT_FLAGS = ["TODO", "DONE", "WAITING", "CANCELLED", "SCHEDULED", "DEADLINE", "CLOSED"];
+const ORG_DEAFULT_FLAGS = ["TODO", "DONE", "WAITING", "CANCELLED", "SCHEDULED", "DEADLINE", "CLOSED", "BLOCKED", "POSTPONED"];
 
 const org_flags = ORG_DEAFULT_FLAGS;
 
@@ -358,8 +626,8 @@ async function get_todos(app: App): Promise<TodoItem[]> {
 			const tokens = tokenize_todo_item(line);
 
 			if (tokens.length < 2
-				|| tokens[0] !== "*"
-				|| !org_flags.includes(tokens[1])) return;
+				|| tokens[0].value !== "*"
+				|| !org_flags.includes(tokens[1].value)) return;
 
 			const location = {
 				file: files[i].path,
@@ -368,23 +636,24 @@ async function get_todos(app: App): Promise<TodoItem[]> {
 
 			const name = tokens
 				.slice(2)
-				.filter((t) => !t.startsWith("<") && !t.startsWith("["))
+				.filter((t) => t.type === TokenType.Word)
+				.map((t) => t.value)
 				.join(" ");
 
 			let date: { date: Date; has_time_of_day: boolean } | undefined = undefined;
-			let priority: number | undefined = undefined;
+			let priority: string | undefined = undefined;
 
 			for (let i = 2; i < tokens.length; i++) {
-				if (tokens[i].startsWith("<")) {
-					date = parse_date(tokens[i]) || undefined;
-				} else if (tokens[i].startsWith("[")) {
-					let priority_str = strip_brackets(tokens[i]);
+				if (tokens[i].type === TokenType.Date) {
+					date = parse_date(tokens[i].value) || undefined;
+				} else if (tokens[i].type === TokenType.Priority) {
+					let priority_str = strip_brackets(tokens[i].value);
 					if (priority_str === undefined) continue;
-					priority = parseInt(priority_str);
+					priority = priority_str;
 				}
 			}
 
-			const flag = tokens[1];
+			const flag = tokens[1].value;
 
 			const todo: TodoItem = {
 				flag,
@@ -435,6 +704,15 @@ export class AgendaView extends ItemView {
 			target: this.contentEl,
 			props: {
 				todos: todos,
+				view: {
+					type: AgendaViewType.DailyWeekly,
+					date: new Date(Date.now()),
+					days_before_showing: 0,
+					days_after_showing: 6,
+				},
+				// view: {
+				// 	type: AgendaViewType.GlobalTODO,
+				// },
 			}
 		});
 	}
@@ -519,7 +797,7 @@ import {
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language"
 import { RangeSetBuilder } from "@codemirror/state";
-import { flag_colour } from 'flag_colour';
+import { flag_colour } from 'utils';
 
 export class FlagWidget extends WidgetType {
 	flag: string;
@@ -541,6 +819,8 @@ export class FlagWidget extends WidgetType {
 		div.style.backgroundColor = "var(--pre-code)";
 		div.style.padding = "3px";
 		div.style.borderRadius = "4px";
+		div.style.cursor = "pointer";
+
 
 		div.onclick = () => {
 			console.log(this.line);
@@ -570,6 +850,7 @@ export class DateWidget extends WidgetType {
 
 		div.classList.add("cm-hmd-internal-link");
 		div.classList.add("cm-underline");
+		div.classList.add("agenda-clickable");
 
 		div.onclick = () => {
 			console.log(this.date);
@@ -579,7 +860,7 @@ export class DateWidget extends WidgetType {
 	}
 }
 
-class EmojiListPlugin implements PluginValue {
+class EditorPlugin implements PluginValue {
 	decorations: DecorationSet;
 
 	constructor(view: EditorView) {
@@ -606,7 +887,7 @@ class EmojiListPlugin implements PluginValue {
 						return;
 					}
 
-					const doc: string = view.state.doc.text.join("\n");
+					const doc = view.state.doc.children?.join("\n") || "";
 
 					let selection: number | null = null;
 					if (view.state.selection.ranges[0]?.from === view.state.selection.ranges[0]?.to) {
@@ -644,19 +925,19 @@ class EmojiListPlugin implements PluginValue {
 					let tokens = tokenize_todo_item(line);
 
 					for (let token of tokens) {
-						if (token.startsWith("<") && token.endsWith(">")) {
-							const date = parse_date(token);
+						if (token.type === TokenType.Date) {
+							const date = parse_date(token.value);
 							if (date === null) continue;
 
-							const range_start = node.from + line.indexOf(token);
-							const range_end = range_start + token.length;
+							const range_start = node.from + line.indexOf(token.value);
+							const range_end = range_start + token.value.length;
 
 							if (selection === null || selection < range_start || selection > range_end) {
 								builder.add(
 									range_start,
 									range_end,
 									Decoration.replace({
-										widget: new DateWidget(token),
+										widget: new DateWidget(token.value),
 									})
 								);
 							}
@@ -671,11 +952,11 @@ class EmojiListPlugin implements PluginValue {
 	}
 }
 
-const pluginSpec: PluginSpec<EmojiListPlugin> = {
-	decorations: (value: EmojiListPlugin) => value.decorations,
+const pluginSpec: PluginSpec<EditorPlugin> = {
+	decorations: (value: EditorPlugin) => value.decorations,
 };
 
-export const emojiListPlugin = ViewPlugin.fromClass(
-	EmojiListPlugin,
+export const editorPlugin = ViewPlugin.fromClass(
+	EditorPlugin,
 	pluginSpec
 );

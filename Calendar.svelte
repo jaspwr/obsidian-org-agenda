@@ -1,5 +1,5 @@
 <script>
-	import { time_now } from "./types";
+	import { time_now } from "./utils";
 
 	export let on_select;
 	export let inital_date = time_now(false);
