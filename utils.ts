@@ -1,4 +1,4 @@
-import { Time } from "types";
+import { Time, TodoItem } from "types";
 
 export const flag_colour = (flag: string): string => {
 	const RED = "var(--color-red)";
@@ -39,9 +39,18 @@ export function time_now(has_time_of_day: boolean): Time {
 	};
 }
 
-export const priority_cmp = (a: string, b: string): number => {
+export function priority_cmp(a?: string, b?: string): number {
 	const priority_order = ["D", "#C", "#B", "#A"];
-	const a_index = priority_order.indexOf(a);
-	const b_index = priority_order.indexOf(b);
+	const a_index = a !== undefined ? priority_order.indexOf(a) : -1;
+	const b_index = b !== undefined ? priority_order.indexOf(b) : -1;
 	return a_index - b_index;
-}
+};
+
+
+export function occurs_on_day(todo: TodoItem, day: number) {
+	if (!todo.date) return false;
+	const todo_day = new Date(todo.date.date);
+	todo_day.setHours(0, 0, 0, 0);
+	return todo_day.valueOf() === day;
+};
+

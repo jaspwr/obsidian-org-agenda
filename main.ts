@@ -1,5 +1,5 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
-
+import { editorInfoField, type TFile } from 'obsidian';
 
 import { AgendaViewType, Time, TodoItem } from './types';
 
@@ -102,6 +102,8 @@ function tokenize_todo_item(line: string): Token[] {
 		}
 	}
 
+	push_token(TokenType.Word);
+
 	return tokens;
 }
 
@@ -198,6 +200,28 @@ function token_under_cursor(editor: Editor): Token | null {
 	return null;
 }
 
+function toggle_todo_state(editor: Editor, line_number: number) {
+	let line = editor.getLine(line_number);
+
+	let tokens = tokenize_todo_item(line);
+	if (tokens.length < 2 || tokens[0].value != "*") return;
+
+	const flag = tokens[1].value;
+
+	const from = { line: line_number, ch: tokens[1].range.start };
+	const to = { line: line_number, ch: tokens[1].range.end };
+
+	if (flag === "TODO") {
+		editor.replaceRange("DONE", from, to);
+	} else if (flag === "DONE") {
+		editor.replaceRange("TODO", from, to);
+	}
+}
+
+let ORG_GLOBAL_OPEN_AGENDA: ((view?: AgendaView) => Promise<void>) | undefined = undefined;
+let ORG_GLOBAL_SET_VIEW: ((view: AgendaView) => void) | undefined = undefined;
+let ORG_GLOBAL_REPLACE_TODOS: ((todos: TodoItem[], path: string) => void) | undefined = undefined;
+
 export default class OrgAgenda extends Plugin {
 	settings: OrgAgendaSettings;
 
@@ -209,7 +233,7 @@ export default class OrgAgenda extends Plugin {
 			(leaf) => new AgendaView(leaf, this.app)
 		);
 
-		const open_agenda = async () => {
+		const open_agenda = async (view?: AgendaView) => {
 			const leaves = this.app.workspace
 				.getLeavesOfType(AGENDA_VIEW_TYPE);
 
@@ -225,7 +249,9 @@ export default class OrgAgenda extends Plugin {
 				this.app.workspace.revealLeaf(leaf);
 				this.app.workspace.setActiveLeaf(leaf);
 			}
-		}
+		};
+
+		ORG_GLOBAL_OPEN_AGENDA = open_agenda;
 
 		const ribbonIconEl = this.addRibbonIcon('calendar-clock', 'Sample Plugin', async (evt: MouseEvent) => {
 			await open_agenda();
@@ -622,50 +648,59 @@ async function get_todos(app: App): Promise<TodoItem[]> {
 
 	for (let i = 0; i < files.length; i++) {
 		const contents = await app.vault.cachedRead(files[i]);
-		contents.split('\n').forEach((line: string, line_number: number) => {
-			const tokens = tokenize_todo_item(line);
-
-			if (tokens.length < 2
-				|| tokens[0].value !== "*"
-				|| !org_flags.includes(tokens[1].value)) return;
-
-			const location = {
-				file: files[i].path,
-				line: line_number + 1,
-			};
-
-			const name = tokens
-				.slice(2)
-				.filter((t) => t.type === TokenType.Word)
-				.map((t) => t.value)
-				.join(" ");
-
-			let date: { date: Date; has_time_of_day: boolean } | undefined = undefined;
-			let priority: string | undefined = undefined;
-
-			for (let i = 2; i < tokens.length; i++) {
-				if (tokens[i].type === TokenType.Date) {
-					date = parse_date(tokens[i].value) || undefined;
-				} else if (tokens[i].type === TokenType.Priority) {
-					let priority_str = strip_brackets(tokens[i].value);
-					if (priority_str === undefined) continue;
-					priority = priority_str;
-				}
-			}
-
-			const flag = tokens[1].value;
-
-			const todo: TodoItem = {
-				flag,
-				name,
-				location,
-				date,
-				priority,
-			};
-
-			todos.push(todo);
-		});
+		const path = files[i].path;
+		todos.push(...parse_todo_item(contents, path));
 	}
+
+	return todos;
+}
+
+function parse_todo_item(contents: string, path: string): TodoItem[] {
+	const todos: TodoItem[] = [];
+
+	contents.split('\n').forEach((line: string, line_number: number) => {
+		const tokens = tokenize_todo_item(line);
+
+		if (tokens.length < 2
+			|| tokens[0].value !== "*"
+			|| !org_flags.includes(tokens[1].value)) return;
+
+		const location = {
+			file: path,
+			line: line_number + 1,
+		};
+
+		const name = tokens
+			.slice(2)
+			.filter((t) => t.type === TokenType.Word)
+			.map((t) => t.value)
+			.join(" ");
+
+		let date: { date: Date; has_time_of_day: boolean } | undefined = undefined;
+		let priority: string | undefined = undefined;
+
+		for (let i = 2; i < tokens.length; i++) {
+			if (tokens[i].type === TokenType.Date) {
+				date = parse_date(tokens[i].value) || undefined;
+			} else if (tokens[i].type === TokenType.Priority) {
+				let priority_str = strip_brackets(tokens[i].value);
+				if (priority_str === undefined) continue;
+				priority = priority_str;
+			}
+		}
+
+		const flag = tokens[1].value;
+
+		const todo: TodoItem = {
+			flag,
+			name,
+			location,
+			date,
+			priority,
+		};
+
+		todos.push(todo);
+	});
 
 	return todos;
 }
@@ -679,10 +714,26 @@ export const AGENDA_VIEW_TYPE = "org-agenda-view";
 
 export class AgendaView extends ItemView {
 	component: Agenda;
+	view: AgendaView;
 
 	constructor(leaf: WorkspaceLeaf, app: App) {
 		super(leaf);
 		this.app = app;
+
+		this.view = {
+			type: AgendaViewType.DailyWeekly,
+			date: new Date(Date.now()),
+			days_before_showing: 0,
+			days_after_showing: 6,
+		};
+
+		ORG_GLOBAL_SET_VIEW = (view: AgendaView) => {
+			if (this.component) {
+				this.component.$destroy();
+			}
+			this.view = view;
+			this.onOpen();
+		};
 	}
 
 	getViewType() {
@@ -704,30 +755,32 @@ export class AgendaView extends ItemView {
 			target: this.contentEl,
 			props: {
 				todos: todos,
-				view: {
-					type: AgendaViewType.DailyWeekly,
-					date: new Date(Date.now()),
-					days_before_showing: 0,
-					days_after_showing: 6,
-				},
-				// view: {
-				// 	type: AgendaViewType.GlobalTODO,
-				// },
+				view: this.view,
 			}
 		});
+
+		ORG_GLOBAL_REPLACE_TODOS = (new_todos: TodoItem[], path: string) => {
+			todos = todos.filter((t: TodoItem) => t.location.file !== path);
+			todos.push(...new_todos);
+
+			this.component.$set({
+				todos
+			});
+		};
 	}
 
 	async onClose() {
+		ORG_GLOBAL_REPLACE_TODOS = undefined;
 		this.component.$destroy();
 	}
 }
 
 //@ts-ignore
-import Calendar from './Calendar.svelte';
+import DateSelect from './DateSelect.svelte';
 
 class DateSelectModal extends Modal {
 	on_select: (date: Time) => void;
-	component?: Calendar;
+	component?: DateSelect;
 	inital_date?: Time;
 
 	constructor(app: App, on_select: (date: Time) => void, inital_date?: Time) {
@@ -743,7 +796,7 @@ class DateSelectModal extends Modal {
 		};
 
 		const { contentEl } = this;
-		this.component = new Calendar({
+		this.component = new DateSelect({
 			target: contentEl,
 			props: {
 				on_select,
@@ -823,6 +876,7 @@ export class FlagWidget extends WidgetType {
 
 
 		div.onclick = () => {
+			// TODO
 			console.log(this.line);
 		};
 
@@ -853,7 +907,17 @@ export class DateWidget extends WidgetType {
 		div.classList.add("agenda-clickable");
 
 		div.onclick = () => {
-			console.log(this.date);
+			if (ORG_GLOBAL_OPEN_AGENDA === undefined) return;
+			ORG_GLOBAL_OPEN_AGENDA().then(() => {
+
+				if (ORG_GLOBAL_SET_VIEW === undefined) return;
+				ORG_GLOBAL_SET_VIEW({
+					type: AgendaViewType.DailyWeekly,
+					date: this.date || new Date(Date.now()),
+					days_before_showing: 0,
+					days_after_showing: 0,
+				});
+			});
 		};
 
 		return div;
@@ -871,6 +935,19 @@ class EditorPlugin implements PluginValue {
 		if (update.docChanged || update.viewportChanged || update.selectionSet) {
 			this.decorations = this.buildDecorations(update.view);
 		}
+
+		if (update.docChanged) {
+			const path = update.view.state.field(editorInfoField).file?.path;
+
+			if (path === undefined) return;
+
+			const contents = update.state.doc.toString();
+			const todos = parse_todo_item(contents, path);
+
+			if (ORG_GLOBAL_REPLACE_TODOS === undefined) return;
+
+			ORG_GLOBAL_REPLACE_TODOS(todos, path);
+		}
 	}
 
 	destroy() { }
@@ -887,14 +964,12 @@ class EditorPlugin implements PluginValue {
 						return;
 					}
 
-					const doc = view.state.doc.children?.join("\n") || "";
-
 					let selection: number | null = null;
 					if (view.state.selection.ranges[0]?.from === view.state.selection.ranges[0]?.to) {
 						selection = view.state.selection.ranges[0].from;
 					}
 
-					let line = doc.slice(node.from, doc.indexOf("\n", node.from));
+					let line = view.state.doc.sliceString(node.from, node.to);
 
 					let flag: string | undefined = undefined;
 

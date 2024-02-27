@@ -8,8 +8,10 @@ If your plugin does not need CSS, delete this file.
 */
 
 .agenda-row-file {
-	min-width: 7rem;
+	min-width: 10rem;
+	word-break: break-all;
 	padding-right: 0.6rem !important;
+	font-size: 0.9rem;
 }
 
 .agenda-row-time {
@@ -17,10 +19,16 @@ If your plugin does not need CSS, delete this file.
 }
 
 .agenda-row-content {
-	width: 100%;
+	width: 20rem;
 	padding-left: 0.6rem !important;
+	min-width: 20rem;
 }
 
 .agenda-clickable {
 	cursor: pointer;
+}
+
+
+.agenda-task-done {
+	text-decoration: line-through;
 }

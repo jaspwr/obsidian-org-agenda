@@ -6,7 +6,7 @@
 	export let shows_time: boolean;
 </script>
 
-<tr class={`todo-item ${todo.flag === "DONE" ? "task-done" : ""}`}>
+<tr class="todo-item">
 	<td class="agenda-row-file">
 		{#if todo.location.file}
 			{todo.location.file}:
@@ -19,7 +19,7 @@
 			&nbsp;
 		{/if}
 	</td>
-	<td class="agenda-row-content">
+	<td class={`agenda-row-content ${todo.flag === "DONE" ? "agenda-task-done" : ""}`}>
 		<span style={`color: ${flag_colour(todo.flag)};`} class="flag"
 			>{todo.flag}</span
 		>
@@ -34,10 +34,6 @@
 <style>
 	.row-item-time {
 		color: var(--text-accent);
-	}
-
-	.task-done {
-		text-decoration: line-through;
 	}
 
 	.flag {

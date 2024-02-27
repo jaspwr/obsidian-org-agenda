@@ -1,26 +1,24 @@
 <script lang="ts">
 	import AgendaItem from "AgendaItem.svelte";
 	import { TodoItem, DailyWeeklyView } from "./types";
-	import { format_time } from "./utils";
+	import { format_time, occurs_on_day } from "./utils";
 
 	export let todos: TodoItem[];
 	export let view: DailyWeeklyView;
 
-	let day_range_start = view.date;
-	day_range_start.setHours(0, 0, 0, 0);
+	let origin = view.date;
+	origin.setHours(0, 0, 0, 0);
 
 	const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
-	const days_range = view.days_after_showing + view.days_before_showing + 1;
+	let days_after_showing = view.days_after_showing;
+	let days_before_showing = view.days_before_showing;
 
-	day_range_start = new Date(day_range_start.valueOf() - (view.days_before_showing) * DAY_IN_MS);	
+	$: days_range = days_after_showing + days_before_showing + 1;
 
-	const occurs_on_day = (todo: TodoItem, day: number) => {
-		if (!todo.date) return false;
-		const todo_day = new Date(todo.date.date);
-		todo_day.setHours(0, 0, 0, 0);
-		return todo_day.valueOf() === day;
-	};
+	$: day_range_start = new Date(
+		new Date(origin).valueOf() - days_before_showing * DAY_IN_MS,
+	);
 
 	type Day = {
 		day: number;
@@ -32,10 +30,13 @@
 	const today = new Date(Date.now());
 	today.setHours(0, 0, 0, 0);
 
-	const day_range: Day[] = [...Array(days_range).keys()].map((i) => {
+	$: day_range = [...Array(days_range).keys()].map((i) => {
+		day_range_start.setHours(0, 0, 0, 0);
 		const day = day_range_start.valueOf() + i * DAY_IN_MS;
 
-		const is_today = day === today.valueOf();
+		const origin_ = new Date(origin);
+		origin_.setHours(0, 0, 0, 0);
+		const full_time_view = day === origin_.valueOf();
 
 		const items_on_day = todos.filter((todo) => occurs_on_day(todo, day));
 
@@ -51,7 +52,7 @@
 					(b.date?.date.valueOf() || 0),
 			);
 
-		return { day, no_time_items, time_items, full_time_view: is_today };
+		return { day, no_time_items, time_items, full_time_view };
 	});
 
 	const time_range = (start: Date, end: Date, division: Date): Date[] => {
@@ -138,8 +139,6 @@
 						date = todo.date?.date.valueOf() || 0;
 					}
 
-					console.log(new Date(date));
-
 					if (now.valueOf() > date) {
 						ret[i].todos = [
 							...todos_in_slot.slice(0, j + 1),
@@ -174,15 +173,21 @@
 	};
 </script>
 
+<div class="options">
+	Previous days:
+	<input class="day-select" type="number" bind:value={days_before_showing} />
+	Day
+	<input type="date" bind:value={origin} />
+	Following days:
+	<input class="day-select" type="number" bind:value={days_after_showing} />
+</div>
+
 {#each day_range as { day, no_time_items, time_items, full_time_view }}
 	<div>
 		<div class="date-name">
 			{new Date(day).toDateString()}
 		</div>
 		<table class="list">
-			<!-- {#each times as time} -->
-			<!-- 	<div><AgendaItem {todo} /></div> -->
-			<!-- {/each} -->
 			{#if full_time_view}
 				{#each before_day(day, time_items) as todo}
 					<AgendaItem {todo} shows_time={true} />
@@ -236,7 +241,7 @@
 	.list {
 		margin-top: 0;
 		margin-bottom: 0;
-		margin-left: 0.2rem;
+		margin-left: 0.5rem;
 	}
 
 	table {
@@ -251,5 +256,13 @@
 		width: 30px;
 		height: 30px;
 		overflow: hidden;
+	}
+
+	.options {
+		margin: 10px;
+	}
+
+	.day-select {
+		width: 3rem;
 	}
 </style>
