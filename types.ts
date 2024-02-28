@@ -9,10 +9,14 @@ export type TodoItem = {
 	priority?: string;
 };
 
+/**
+* @member recurrence - The number of days between each recurrence.
+*/ 
 export type Time = {
 	date: Date;
 	has_time_of_day: boolean;
 	until?: Date;
+	recurrence?: number;
 };
 
 export enum AgendaViewType {

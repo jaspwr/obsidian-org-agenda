@@ -36,16 +36,15 @@ function tokenize_todo_item(line: string): Token[] {
 
 	let current_token: string = "";
 
-	let i = 0;
-	const push_token = (type: TokenType) => {
+	const push_token = (type: TokenType, pos: number) => {
 		if (current_token.length === 0) return;
 
 		tokens.push({
 			value: current_token,
 			type,
 			range: {
-				start: i - current_token.length + 1,
-				end: i + 1,
+				start: pos - current_token.length,
+				end: pos,
 			}
 		});
 
@@ -60,23 +59,23 @@ function tokenize_todo_item(line: string): Token[] {
 
 	let state = State.Normal;
 
-	for (i = 0; i < line.length; i++) {
+	for (let i = 0; i < line.length; i++) {
 		const c = line[i];
 
 		if (state === State.Normal) {
 			if (c === " " || c === "\t" || c === "\r" || c === "\n") {
-				push_token(TokenType.Word);
+				push_token(TokenType.Word, i);
 				continue;
 			}
 
 			if (c === "[") {
 				state = State.SquareBrackets;
-				push_token(TokenType.Word);
+				push_token(TokenType.Word, i);
 			}
 
 			if (c === "<") {
 				state = State.AngelBrackets;
-				push_token(TokenType.Word);
+				push_token(TokenType.Word, i);
 			}
 
 			current_token += c;
@@ -90,19 +89,19 @@ function tokenize_todo_item(line: string): Token[] {
 
 			if (c === "]") {
 				state = State.Normal;
-				push_token(type);
+				push_token(type, i + 1);
 			}
 		} else if (state === State.AngelBrackets) {
 			current_token += c;
 
 			if (c === ">") {
 				state = State.Normal;
-				push_token(TokenType.Date);
+				push_token(TokenType.Date, i + 1);
 			}
 		}
 	}
 
-	push_token(TokenType.Word);
+	push_token(TokenType.Word, line.length);
 
 	return tokens;
 }
@@ -126,37 +125,109 @@ function strip_brackets(s: string): string {
 * Parses date in org-agenda format (e.g. <1970-01-01 Sun 00:00>).
 * The time of day and day of week are optional.
 */
-function parse_date(date: string): { date: Date; has_time_of_day: boolean } | null {
+function parse_date(date: string): Time | null {
 	let tokens = strip_brackets(date).split(" ").filter((t) => t.length > 0);
+	if (typeof tokens === "string") return null;
 
-	if (tokens.length === 0) return null;
+	let time: Time = {
+		date: new Date(0),
+		has_time_of_day: false,
+		until: undefined,
+		recurrence: undefined,
+	};
 
-	let day = tokens[0].split("-");
+	for (let i = 0; i < tokens.length; i++) {
+		const token = tokens[i];
+		let d = try_parse_date(token);
+
+		if (d !== null) {
+			time.date = d;
+			continue;
+		}
+
+		let t = try_parse_time(token);
+
+		if (t !== null) {
+			time.date.setHours(t.h);
+			time.date.setMinutes(t.m);
+			time.has_time_of_day = true;
+			continue;
+		}
+
+		let day_of_week = try_parse_day_of_week(token);
+
+		if (day_of_week !== null) {
+			continue;
+		}
+
+		let recurrence = try_parse_recurrence(token);
+
+		if (recurrence !== null) {
+			time.recurrence = recurrence;
+			continue;
+		}
+
+		return null;
+	}
+
+
+	return time;
+}
+
+function try_parse_date(date: string): Date | null {
+	const day = date.split("-");
 	if (day.length !== 3) return null;
 
 	let year = parseInt(day[0]);
 	let month = parseInt(day[1]);
 	let day_of_month = parseInt(day[2]);
 
-	// No time of day. Day of week ignored.
-	if (tokens.length === 1 || tokens.length === 2) {
-		const date = new Date(year, month - 1, day_of_month);
-		return { date, has_time_of_day: false };
+	return new Date(year, month - 1, day_of_month);
+}
+
+function try_parse_time(time: string): { h: number, m: number } | null {
+	const time_tokens = time.split(":");
+	if (time_tokens.length !== 2) return null;
+
+	let hour = parseInt(time_tokens[0]);
+	let minute = parseInt(time_tokens[1]);
+
+	return { h: hour, m: minute };
+}
+
+function try_parse_day_of_week(day_of_week: string): number | null {
+	const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+	const index = DAYS.indexOf(day_of_week);
+	if (index === -1) return null;
+	return index;
+}
+
+/**
+* @returns The number of days between each recurrence.
+*/
+function try_parse_recurrence(recurrence: string): number | null {
+	if (recurrence.length < 4) return null;
+	if (!recurrence.startsWith("++")) return null;
+
+	const count = parseInt(recurrence.slice(2, -1));
+	if (isNaN(count)) return null;
+
+	const unit = recurrence[recurrence.length - 1];
+
+	let unit_days = undefined;
+
+	switch (unit) {
+		case "d":
+			unit_days = 1;
+			break;
+		case "w":
+			unit_days = 1 * 7;
+			break;
 	}
 
+	if (unit_days === undefined) return null;
 
-	if (tokens.length === 3) {
-		let time = tokens[2].split(":");
-		if (time.length !== 2) return null;
-
-		let hour = parseInt(time[0]);
-		let minute = parseInt(time[1]);
-
-		const date = new Date(year, month - 1, day_of_month, hour, minute);
-		return { date, has_time_of_day: true };
-	}
-
-	return null;
+	return count * unit_days;
 }
 
 /**
@@ -178,11 +249,28 @@ function format_date(time: Time): string {
 	const minute = date.getMinutes().toString().padStart(2, "0");
 
 	// TODO: time ranges
+
+	let ret = "<";
+
+	ret += date_str;
+	ret += " ";
+	ret += day_of_week;
+
 	if (time.has_time_of_day) {
-		return `<${date_str} ${day_of_week} ${hour}:${minute}>`;
-	} else {
-		return `<${date_str} ${day_of_week}>`;
+		ret += " ";
+		ret += hour;
+		ret += ":";
+		ret += minute;
 	}
+
+	if (time.recurrence !== undefined) {
+		let count = time.recurrence.valueOf() / (1000 * 60 * 60 * 24);
+		ret += ` ++${count}d`;
+	}
+
+	ret += ">";
+
+	return ret;
 }
 
 function token_under_cursor(editor: Editor): Token | null {
@@ -192,7 +280,7 @@ function token_under_cursor(editor: Editor): Token | null {
 	let tokens = tokenize_todo_item(line);
 
 	for (let token of tokens) {
-		if (cursor.ch >= token.range.start && cursor.ch < token.range.end - 1) {
+		if (cursor.ch >= token.range.start && cursor.ch < token.range.end) {
 			return token;
 		}
 	}
@@ -253,7 +341,7 @@ export default class OrgAgenda extends Plugin {
 
 		ORG_GLOBAL_OPEN_AGENDA = open_agenda;
 
-		const ribbonIconEl = this.addRibbonIcon('calendar-clock', 'Sample Plugin', async (evt: MouseEvent) => {
+		const ribbonIconEl = this.addRibbonIcon('calendar-clock', 'Agenda View', async (evt: MouseEvent) => {
 			await open_agenda();
 		});
 
@@ -721,6 +809,7 @@ export class AgendaView extends ItemView {
 		this.app = app;
 
 		this.view = {
+			//@ts-ignore
 			type: AgendaViewType.DailyWeekly,
 			date: new Date(Date.now()),
 			days_before_showing: 0,
@@ -884,7 +973,7 @@ export class FlagWidget extends WidgetType {
 	}
 }
 
-export class DateWidget extends WidgetType {
+class DateWidget extends WidgetType {
 	date_text: string;
 	date?: Date;
 
@@ -912,6 +1001,7 @@ export class DateWidget extends WidgetType {
 
 				if (ORG_GLOBAL_SET_VIEW === undefined) return;
 				ORG_GLOBAL_SET_VIEW({
+					//@ts-ignore
 					type: AgendaViewType.DailyWeekly,
 					date: this.date || new Date(Date.now()),
 					days_before_showing: 0,
@@ -923,6 +1013,31 @@ export class DateWidget extends WidgetType {
 		return div;
 	}
 }
+
+class PriorityWidget extends WidgetType {
+	priority: string;
+
+	constructor(priority: string) {
+		super();
+		this.priority = priority;
+	}
+
+	toDOM(view: EditorView): HTMLElement {
+		const div = document.createElement("span");
+
+		div.innerText = this.priority;
+		div.style.color = "var(--text-accent)";
+		div.style.fontWeight = "bold";
+
+		return div;
+	}
+}
+
+type DecorationQueueItem = {
+	start: number;
+	end: number;
+	widget: WidgetType;
+};
 
 class EditorPlugin implements PluginValue {
 	decorations: DecorationSet;
@@ -955,76 +1070,102 @@ class EditorPlugin implements PluginValue {
 	buildDecorations(view: EditorView): DecorationSet {
 		const builder = new RangeSetBuilder<Decoration>();
 
+		const queued_decorations: DecorationQueueItem[] = [];
+
 		for (let { from, to } of view.visibleRanges) {
 			syntaxTree(view.state).iterate({
 				from,
 				to,
 				enter(node) {
-					if (!node.type.name.startsWith("list")) {
-						return;
-					}
-
-					let selection: number | null = null;
-					if (view.state.selection.ranges[0]?.from === view.state.selection.ranges[0]?.to) {
-						selection = view.state.selection.ranges[0].from;
-					}
-
-					let line = view.state.doc.sliceString(node.from, node.to);
-
-					let flag: string | undefined = undefined;
-
-					for (let f of org_flags) {
-						if (line.startsWith(f)) {
-							flag = f;
-							break;
-						}
-					}
-
-					if (flag === undefined) return;
-
-					const range_start = node.from;
-					const range_end = range_start + flag.length;
-
-					const line_number = view.state.doc.lineAt(range_start).number - 1;
-
-					if (selection === null || selection < range_start || selection > range_end) {
-						builder.add(
-							range_start,
-							range_end,
-							Decoration.replace({
-								widget: new FlagWidget(flag, line_number),
-							})
-						);
-					}
-
-					let tokens = tokenize_todo_item(line);
-
-					for (let token of tokens) {
-						if (token.type === TokenType.Date) {
-							const date = parse_date(token.value);
-							if (date === null) continue;
-
-							const range_start = node.from + line.indexOf(token.value);
-							const range_end = range_start + token.value.length;
-
-							if (selection === null || selection < range_start || selection > range_end) {
-								builder.add(
-									range_start,
-									range_end,
-									Decoration.replace({
-										widget: new DateWidget(token.value),
-									})
-								);
-							}
-						}
-					}
-
+					queued_decorations.push(...handle_list_item(node, builder, view));
 				},
 			});
 		}
 
+		queued_decorations.sort((a, b) => a.start - b.start);
+
+		for (let i = 0; i < queued_decorations.length; i++) {
+			const { start, end, widget: decoration } = queued_decorations[i];
+
+			builder.add(start, end, Decoration.replace({ widget: decoration }));
+		}
+
 		return builder.finish();
 	}
+}
+
+
+// TODO: import SyntaxNodeRef for the type of node.
+function handle_list_item(node: any, builder: RangeSetBuilder<Decoration>, view: EditorView): DecorationQueueItem[] {
+	if (!node.type.name.startsWith("list")) {
+		return [];
+	}
+
+	let selection: number | null = null;
+	if (view.state.selection.ranges[0]?.from === view.state.selection.ranges[0]?.to) {
+		selection = view.state.selection.ranges[0].from;
+	}
+
+	const { text, from: line_from, number: line_number } = view.state.doc.lineAt(node.from);
+
+	const tokens = tokenize_todo_item(text);
+
+	if (tokens.length < 2 || tokens[0].value !== "*") return [];
+
+	let flag: string | undefined = org_flags.find((f) => f === tokens[1].value);
+
+	if (flag === undefined) return [];
+
+
+	const global_range = (range: { start: number, end: number }) => ({
+		start: line_from + range.start,
+		end: line_from + range.end,
+	});
+
+	const not_selected = (start: number, end: number) => {
+		return (selection === null || selection < start || selection > end);
+	};
+
+	const { start: flag_start, end: flag_end } = global_range(tokens[1].range);
+
+	const decorations: DecorationQueueItem[] = [];
+
+	if (not_selected(flag_start, flag_end)) {
+		decorations.push({
+			start: flag_start,
+			end: flag_end,
+			widget: new FlagWidget(flag, line_number),
+		});
+	}
+
+	for (let token of tokens) {
+		const { start, end } = global_range(token.range);
+
+		if (token.type === TokenType.Date) {
+			const date = parse_date(token.value);
+			if (date === null) continue;
+
+			if (not_selected(start, end)) {
+				decorations.push({
+					start,
+					end,
+					widget: new DateWidget(token.value),
+				});
+			}
+		}
+
+		if (token.type === TokenType.Priority && token.value.startsWith("[#")) {
+			if (not_selected(start, end)) {
+				decorations.push({
+					start,
+					end,
+					widget: new PriorityWidget(token.value),
+				});
+			}
+		}
+	}
+
+	return decorations;
 }
 
 const pluginSpec: PluginSpec<EditorPlugin> = {

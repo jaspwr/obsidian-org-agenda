@@ -1,4 +1,5 @@
 import { Time, TodoItem } from "types";
+import moment from "moment";
 
 export const flag_colour = (flag: string): string => {
 	const RED = "var(--color-red)";
@@ -46,11 +47,27 @@ export function priority_cmp(a?: string, b?: string): number {
 	return a_index - b_index;
 };
 
-
 export function occurs_on_day(todo: TodoItem, day: number) {
 	if (!todo.date) return false;
-	const todo_day = new Date(todo.date.date);
+
+	if (todo.date.recurrence !== undefined) {
+		if (day < todo.date?.date.valueOf() ?? 0) return;
+
+		// todo_day + n * todo.recurring == day
+		// n * todo.recurring == day - todo_day
+		// n == (day - todo_day) / todo.recurring
+		// n must be an integer
+		
+		const d1_moment = moment(todo.date.date);
+		const d2_moment = moment(day);
+		const diff = d1_moment.diff(d2_moment, "days");
+
+		return diff % todo.date.recurrence === 0;
+	}
+
+	const todo_day = new Date(todo.date?.date);
 	todo_day.setHours(0, 0, 0, 0);
+
 	return todo_day.valueOf() === day;
 };
 

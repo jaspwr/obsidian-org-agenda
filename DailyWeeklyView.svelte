@@ -100,7 +100,7 @@
 
 		const after = todos.filter(
 			(todo) =>
-				(todo.date || { date: new Date(0) }).date.valueOf() >=
+				(todo.date ?? { date: new Date(0) }).date.valueOf() >=
 				last.valueOf(),
 		);
 

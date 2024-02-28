@@ -122,7 +122,7 @@
 	</table>
 </div>
 
-<svelte:window on:keydown|preventDefault={keypress_handler} />
+<!-- <svelte:window on:keydown|preventDefault={keypress_handler} /> -->
 
 <style>
 	.day-button {
