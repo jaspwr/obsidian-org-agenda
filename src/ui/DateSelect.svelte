@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { time_now } from "./utils";
-	import { day_in_month, keypress, to_time } from "./calendar";
-	import { Time } from "./types";
+	import { time_now } from "../utils";
+	import { day_in_month, keypress, to_time } from "../calendar";
+	import { Time } from "../types";
 	import { writable, derived } from "svelte/store";
 
 	export let on_select: (t: Time) => void;

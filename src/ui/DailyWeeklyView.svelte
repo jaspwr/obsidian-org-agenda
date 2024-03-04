@@ -1,7 +1,7 @@
 <script lang="ts">
-	import AgendaItem from "AgendaItem.svelte";
-	import { TodoItem, DailyWeeklyView } from "./types";
-	import { format_time, occurs_on_day } from "./utils";
+	import AgendaItem from "./AgendaItem.svelte";
+	import { TodoItem, DailyWeeklyView } from "../types";
+	import { format_time, occurs_on_day } from "../utils";
 
 	export let todos: TodoItem[];
 	export let view: DailyWeeklyView;

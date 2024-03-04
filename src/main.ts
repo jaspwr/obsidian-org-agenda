@@ -796,7 +796,7 @@ function parse_todo_item(contents: string, path: string): TodoItem[] {
 import { ItemView, WorkspaceLeaf } from "obsidian";
 
 //@ts-ignore
-import Agenda from "./Agenda.svelte";
+import Agenda from "./ui/Agenda.svelte";
 
 export const AGENDA_VIEW_TYPE = "org-agenda-view";
 
@@ -865,7 +865,7 @@ export class AgendaView extends ItemView {
 }
 
 //@ts-ignore
-import DateSelect from './DateSelect.svelte';
+import DateSelect from './ui/DateSelect.svelte';
 
 class DateSelectModal extends Modal {
 	on_select: (date: Time) => void;
@@ -939,7 +939,7 @@ import {
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language"
 import { RangeSetBuilder } from "@codemirror/state";
-import { flag_colour } from 'utils';
+import { flag_colour } from './utils';
 
 export class FlagWidget extends WidgetType {
 	flag: string;

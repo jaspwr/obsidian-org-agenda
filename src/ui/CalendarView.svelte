@@ -1,6 +1,6 @@
 <script>
-	import { flag_colour, occurs_on_day } from "./utils";
-	import { day_in_month, keypress } from "./calendar";
+	import { flag_colour, occurs_on_day } from "../utils";
+	import { day_in_month, keypress } from "../calendar";
 	import { writable } from "svelte/store";
 
 	export let todos;

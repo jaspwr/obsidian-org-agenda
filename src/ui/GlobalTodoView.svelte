@@ -1,7 +1,7 @@
 <script lang="ts">
-	import AgendaItem from "AgendaItem.svelte";
-	import { TodoItem, AgendaView, AgendaViewType } from "./types";
-	import { priority_cmp } from "./utils";
+	import AgendaItem from "./AgendaItem.svelte";
+	import { TodoItem, AgendaView, AgendaViewType } from "../types";
+	import { priority_cmp } from "../utils";
 
 	export let todos: TodoItem[];
 
@@ -55,7 +55,7 @@
 
 {#each todo_list as todo}
 	<table>
-		<AgendaItem {todo} />
+		<AgendaItem {todo} shows_time={false} />
 	</table>
 {/each}
 

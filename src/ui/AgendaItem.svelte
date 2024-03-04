@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { TodoItem } from "./types";
-	import { flag_colour, format_time } from "./utils";
+	import { TodoItem } from "../types";
+	import { flag_colour, format_time } from "../utils";
 
 	export let todo: TodoItem;
 	export let shows_time: boolean;

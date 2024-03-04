@@ -1,4 +1,4 @@
-import { Time, TodoItem } from "types";
+import { Time, TodoItem } from "./types";
 import moment from "moment";
 
 export const flag_colour = (flag: string): string => {

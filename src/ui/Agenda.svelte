@@ -1,8 +1,8 @@
 <script lang="ts">
-	import DailyWeeklyView from "DailyWeeklyView.svelte";
-	import { TodoItem, AgendaView, AgendaViewType } from "./types";
-	import GlobalTodoView from "GlobalTodoView.svelte";
-	import CalendarView from "CalendarView.svelte";
+	import DailyWeeklyView from "./DailyWeeklyView.svelte";
+	import { TodoItem, AgendaView, AgendaViewType } from "../types";
+	import GlobalTodoView from "./GlobalTodoView.svelte";
+	import CalendarView from "./CalendarView.svelte";
 
 	export let todos: TodoItem[];
 	export let view: AgendaView;
