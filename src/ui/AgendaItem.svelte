@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { TodoItem } from "../types";
-	import { flag_colour, format_time } from "../utils";
+	import { flag_colour, format_time, relative_days } from "../utils";
 
 	export let todo: TodoItem;
 	export let shows_time: boolean;
+	export let show_relative_days: boolean;
+	export let day_displaying_on: Date;
 </script>
 
 <tr class="todo-item">
@@ -15,6 +17,8 @@
 	<td class="agenda-row-time row-item-time">
 		{#if shows_time && todo.date?.has_time_of_day}
 			{format_time(todo.date?.date) + "••••••"}
+		{:else if show_relative_days}
+			{relative_days(day_displaying_on, new Date(Date.now()))}
 		{:else}
 			&nbsp;
 		{/if}

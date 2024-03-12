@@ -55,7 +55,12 @@
 
 {#each todo_list as todo}
 	<table>
-		<AgendaItem {todo} shows_time={false} />
+		<AgendaItem
+			{todo}
+			shows_time={false}
+			show_relative_days={false}
+			day_displaying_on={new Date(0)}
+		/>
 	</table>
 {/each}
 
@@ -76,5 +81,4 @@
 	.option input {
 		vertical-align: middle;
 	}
-
 </style>

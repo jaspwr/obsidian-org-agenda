@@ -27,6 +27,10 @@ type Token = {
 	};
 }
 
+function not_list_character(c: string): boolean {
+	return c !== "*" && c !== "-";
+}
+
 /** 
 * Splits by whitespace but groups anything in square or angel brackets.
 * Useful for parsing TODO items.
@@ -292,7 +296,7 @@ function toggle_todo_state(editor: Editor, line_number: number) {
 	let line = editor.getLine(line_number);
 
 	let tokens = tokenize_todo_item(line);
-	if (tokens.length < 2 || tokens[0].value != "*") return;
+	if (tokens.length < 2 || not_list_character(tokens[0].value)) return;
 
 	const flag = tokens[1].value;
 
@@ -352,7 +356,7 @@ export default class OrgAgenda extends Plugin {
 			let line = editor.getLine(cursor.line);
 
 			let tokens = tokenize_todo_item(line);
-			if (tokens.length < 2 || tokens[0].value != "*") return;
+			if (tokens.length < 2 || not_list_character(tokens[0].value)) return;
 
 			const formatted_date = format_date(date);
 
@@ -395,7 +399,7 @@ export default class OrgAgenda extends Plugin {
 			const line = editor.getLine(cursor.line);
 
 			let tokens = tokenize_todo_item(line);
-			if (tokens.length < 2 || tokens[0].value != "*") return null;
+			if (tokens.length < 2 || not_list_character(tokens[0].value)) return null;
 
 			let date_token = tokens.find((t) => t.type === TokenType.Date);
 
@@ -483,7 +487,7 @@ export default class OrgAgenda extends Plugin {
 			let line = editor.getLine(line_number);
 
 			let tokens = tokenize_todo_item(line);
-			if (tokens.length < 2 || tokens[0].value != "*") return;
+			if (tokens.length < 2 || not_list_character(tokens[0].value)) return;
 
 			const flag = tokens[1].value;
 
@@ -500,6 +504,9 @@ export default class OrgAgenda extends Plugin {
 					editor.replaceRange("TODO", { line: line_number, ch: pos }, { line: line_number, ch: pos + 4 });
 				} else {
 					let pos = line.indexOf("*");
+
+					if (pos === -1) pos = line.indexOf("-");
+
 					editor.replaceRange("* DONE", { line: line_number, ch: pos }, { line: line_number, ch: pos + 1 });
 				}
 			} else {
@@ -515,6 +522,9 @@ export default class OrgAgenda extends Plugin {
 					editor.replaceRange("", { line: line_number, ch: pos }, { line: line_number, ch: pos_end + whitespace });
 				} else {
 					let pos = line.indexOf("*");
+
+					if (pos === -1) pos = line.indexOf("-");
+
 					editor.replaceRange("* TODO", { line: line_number, ch: pos }, { line: line_number, ch: pos + 1 });
 				}
 			}
@@ -645,12 +655,12 @@ export default class OrgAgenda extends Plugin {
 			// No priority found, add one.
 
 			const new_priority = backwards ? " [#C]" : " [#A]";
-			if (tokens.length < 2 || tokens[0].value != "*") return;
+			if (tokens.length < 2 || not_list_character(tokens[0].value)) return;
 			if (!org_flags.includes(tokens[1].value)) return;
 			editor.replaceRange(
 				new_priority,
-				{ line: cursor.line, ch: tokens[1].range.end - 1 },
-				{ line: cursor.line, ch: tokens[1].range.end - 1 }
+				{ line: cursor.line, ch: tokens[1].range.end },
+				{ line: cursor.line, ch: tokens[1].range.end }
 			);
 		};
 
@@ -750,7 +760,7 @@ function parse_todo_item(contents: string, path: string): TodoItem[] {
 		const tokens = tokenize_todo_item(line);
 
 		if (tokens.length < 2
-			|| tokens[0].value !== "*"
+			|| not_list_character(tokens[0].value)
 			|| !org_flags.includes(tokens[1].value)) return;
 
 		const location = {
@@ -1110,7 +1120,7 @@ function handle_list_item(node: any, builder: RangeSetBuilder<Decoration>, view:
 
 	const tokens = tokenize_todo_item(text);
 
-	if (tokens.length < 2 || tokens[0].value !== "*") return [];
+	if (tokens.length < 2 || not_list_character(tokens[0].value)) return [];
 
 	let flag: string | undefined = org_flags.find((f) => f === tokens[1].value);
 

@@ -26,6 +26,10 @@ export const flag_colour = (flag: string): string => {
 	}
 }
 
+export const is_completed = (todo: TodoItem): boolean => {
+	return todo.flag === "DONE";
+};
+
 export const format_time = (time: Date): string => {
 	const hour = time.getHours().toString().padStart(2, "0");
 	const min = time.getMinutes().toString().padStart(2, "0");
@@ -57,7 +61,7 @@ export function occurs_on_day(todo: TodoItem, day: number) {
 		// n * todo.recurring == day - todo_day
 		// n == (day - todo_day) / todo.recurring
 		// n must be an integer
-		
+
 		const d1_moment = moment(todo.date.date);
 		const d2_moment = moment(day);
 		const diff = d1_moment.diff(d2_moment, "days");
@@ -71,3 +75,16 @@ export function occurs_on_day(todo: TodoItem, day: number) {
 	return todo_day.valueOf() === day;
 };
 
+export function relative_days(date: Date, realtive_to: Date): String {
+	const d1_moment = moment(realtive_to);
+	const d2_moment = moment(date);
+	const diff = d1_moment.diff(d2_moment, "days");
+
+	if (diff === 0) {
+		return "Today";
+	} else if (diff < 0) {
+		return `In ${Math.abs(diff)} day${diff === -1 ? "" : "s"}`;
+	} else {
+		return `${diff} day${diff === 1 ? "" : "s"} ago`;
+	}
+}

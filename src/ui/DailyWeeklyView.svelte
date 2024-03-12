@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AgendaItem from "./AgendaItem.svelte";
 	import { TodoItem, DailyWeeklyView } from "../types";
-	import { format_time, occurs_on_day } from "../utils";
+	import { format_time, occurs_on_day, is_completed } from "../utils";
 
 	export let todos: TodoItem[];
 	export let view: DailyWeeklyView;
@@ -164,13 +164,33 @@
 		start.setHours(8, 0, 0, 0);
 
 		const before = todos.filter(
-			(todo) =>
-				(todo.date || { date: new Date(0) }).date.valueOf() <
-				start.valueOf(),
+			(todo) => (todo.date?.date.valueOf() ?? 0) < start.valueOf(),
 		);
 
 		return before;
 	};
+
+	const overdue = (todos: TodoItem[]): TodoItem[] => {
+		const start = new Date(Date.now());
+		start.setHours(0, 0, 0, 0);
+
+		const before = todos.filter(
+			(todo) =>
+				todo.date !== undefined &&
+				todo.date.recurrence === undefined &&
+				todo.date.date.valueOf() < start.valueOf() &&
+				!is_completed(todo),
+		);
+
+		before.sort(
+			(a, b) =>
+				(a.date?.date.valueOf() ?? 0) - (b.date?.date.valueOf() ?? 0),
+		);
+
+		return before;
+	};
+
+	$: overdue_todos = overdue(todos);
 </script>
 
 <div class="options">
@@ -182,6 +202,22 @@
 	<input class="day-select" type="number" bind:value={days_after_showing} />
 </div>
 
+{#if overdue_todos.length > 0}
+	<div>
+		<div class="overdue date-name">Overdue</div>
+		<table class="list">
+			{#each overdue_todos as todo}
+				<AgendaItem
+					{todo}
+					shows_time={false}
+					show_relative_days={true}
+					day_displaying_on={todo.date?.date ?? new Date(0)}
+				/>
+			{/each}
+		</table>
+	</div>
+{/if}
+
 {#each day_range as { day, no_time_items, time_items, full_time_view }}
 	<div>
 		<div class="date-name">
@@ -190,7 +226,12 @@
 		<table class="list">
 			{#if full_time_view}
 				{#each before_day(day, time_items) as todo}
-					<AgendaItem {todo} shows_time={true} />
+					<AgendaItem
+						{todo}
+						shows_time={true}
+						show_relative_days={false}
+						day_displaying_on={new Date(day)}
+					/>
 				{/each}
 				{#each full_list(day, time_items) as { start, todos }}
 					<tr style="opacity: 0.6">
@@ -214,19 +255,41 @@
 								>
 							</tr>
 						{:else}
-							<AgendaItem {todo} shows_time={true} />
+							<AgendaItem
+								{todo}
+								shows_time={true}
+								show_relative_days={false}
+								day_displaying_on={new Date(day)}
+							/>
 						{/if}
 					{/each}
 				{/each}
+				{#each no_time_items as todo}
+					<AgendaItem
+						{todo}
+						shows_time={false}
+						show_relative_days={true}
+						day_displaying_on={new Date(day)}
+					/>
+				{/each}
 			{:else}
 				{#each time_items as todo}
-					<AgendaItem {todo} shows_time={true} />
+					<AgendaItem
+						{todo}
+						shows_time={false}
+						show_relative_days={true}
+						day_displaying_on={new Date(day)}
+					/>
+				{/each}
+				{#each no_time_items as todo}
+					<AgendaItem
+						{todo}
+						shows_time={false}
+						show_relative_days={true}
+						day_displaying_on={new Date(day)}
+					/>
 				{/each}
 			{/if}
-
-			{#each no_time_items as todo}
-				<AgendaItem {todo} shows_time={false} />
-			{/each}
 		</table>
 	</div>
 {/each}
@@ -236,6 +299,10 @@
 		font-size: 1.2em;
 		font-weight: bold;
 		color: var(--interactive-accent);
+	}
+
+	.overdue {
+		color: var(--color-red) !important;
 	}
 
 	.list {
